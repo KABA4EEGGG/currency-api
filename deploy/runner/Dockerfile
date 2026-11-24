@@ -19,7 +19,7 @@ RUN curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" | 
 
 # kubectl (версия под кластер)
 RUN curl -fsSL -o /usr/local/bin/kubectl \
-      "https://dl.k8s.io/release/v${KUBECTL_VERSION}.bin/linux/amd64/kubectl" \
+      "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
  && chmod +x /usr/local/bin/kubectl
 
 # k6 (генератор нагрузочных тестов)
