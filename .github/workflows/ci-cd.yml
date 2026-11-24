@@ -124,7 +124,13 @@ jobs:
       - name: Проверка /healthz и /readyz
         run: |
           set -e
-          BASE_URL="http://localhost:${NODE_PORT}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # Сервис работает в кластере на узле debian, runner — на отдельной
+          # машине: адрес вычисляем из IP узла k3s (генератор нагрузки не на
+          # машине сервиса — В3).
+          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+          BASE_URL="http://${NODE_IP}:${NODE_PORT}"
+          echo "BASE_URL=$BASE_URL"
           for i in $(seq 1 30); do
             if curl -sf "$BASE_URL/healthz" >/dev/null; then break; fi
             echo "ожидание сервиса ($i/30)..."; sleep 2
@@ -147,11 +153,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Подготовка каталога отчёта (доступ из контейнера k6)
         run: mkdir -p test/load/results && chmod 777 test/load/results
+      - name: Адрес сервиса из IP узла кластера
+        run: |
+          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+          echo "BASE_URL=http://${NODE_IP}:${NODE_PORT}" >> "$GITHUB_ENV"
       - name: k6 run (изолированный контейнер — генератор нагрузки)
         run: |
+          echo "Нагрузка с runner-машины на сервис кластера: $BASE_URL"
           docker run --rm --network host \
             -v "$PWD/test/load:/scripts" \
-            -e BASE_URL="http://localhost:${NODE_PORT}" \
+            -e BASE_URL="$BASE_URL" \
             -e REPORT_PATH=/scripts/results/report.html \
             grafana/k6:2.4.0 run /scripts/currency-load-test.js \
               --summary-export /scripts/results/summary.json
