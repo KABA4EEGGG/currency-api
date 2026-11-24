@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_PORT: "30080"
+  NODE_PORT: "30090"
 
 jobs:
   lint:

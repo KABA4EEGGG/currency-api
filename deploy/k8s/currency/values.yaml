@@ -11,7 +11,7 @@ replicaCount: 1
 service:
   type: NodePort
   port: 8080
-  nodePort: 30080
+  nodePort: 30090
 
 database:
   # PostgreSQL разворачивается вместе с приложением.

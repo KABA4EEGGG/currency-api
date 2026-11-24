@@ -121,15 +121,29 @@ k6 run -e BASE_URL=http://localhost:8080 test/load/currency-load-test.js
 
 1. **Секреты репозитория** (Settings → Secrets and variables → Actions):
    - `DB_PASSWORD` — пароль PostgreSQL для чарта (придумайте и сохраните).
-2. **Self-hosted runner** (Settings → Actions → Runners → New self-hosted runner):
+2. **Self-hosted runner** (Settings → Actions → Runners → New self-hosted runner).
+   Фактическая установка на машину `kurahost` (сборка идёт в облаке, а этот
+   runner делает деплой, smoke и генерирует нагрузку k6 — кластер при этом на
+   отдельном узле `debian`):
    ```bash
    mkdir ~/actions-runner && cd ~/actions-runner
-   # скачать и распаковать раннер по инструкции GitHub, затем:
-   ./config.sh --url https://github.com/<user>/<repo> --token <TOKEN> --labels self-hosted
-   sudo ./svc.sh install kura   # или запуск вручную: ./run.sh
-   sudo ./svc.sh start
+   # скачать и распаковать actions-runner-linux-x64-*.tar.gz по инструкции GitHub
+   TOKEN=$(gh api repos/<user>/<repo>/actions/runners/registration-token -X POST --jq .token)
+   ./config.sh --url https://github.com/<user>/<repo> --token "$TOKEN" \
+     --unattended --labels self-hosted --work _work
    ```
-   Требования к хосту раннера: `helm` и `kubectl` с доступом к k3s
+   На очень свежих дистрибутивах (libssl.so.4 вместо libssl.so.3) перед
+   запуском добавить симлинки рядом с рантаймом runner'а:
+   ```bash
+   ln -sf /usr/lib/x86_64-linux-gnu/libssl.so.4   ~/actions-runner/bin/libssl.so.3
+   ln -sf /usr/lib/x86_64-linux-gnu/libcrypto.so.4 ~/actions-runner/bin/libcrypto.so.3
+   ```
+   Запуск как пользовательский systemd-сервис (`~/.config/systemd/user/github-runner.service`,
+   `Environment=LD_LIBRARY_PATH=%h/actions-runner/bin`):
+   ```bash
+   systemctl --user daemon-reload && systemctl --user enable --now github-runner
+   ```
+   Требования к хосту runner'а: `helm` и `kubectl` с доступом к k3s
    (`~/.local/bin` добавляется в PATH job'ом), `docker` (нужен для k6).
 3. **Публичность образа**: после первого успешного пуша открыть
    `https://github.com/users/<user>/packages/container/currency-api/settings`
@@ -173,7 +187,7 @@ helm upgrade --install currency-api deploy/k8s/currency \
 kubectl -n currency get hpa -w        # наблюдение автоскейлинга
 ```
 
-Сервис доступен через NodePort `http://<узел>:30080`.
+Сервис доступен через NodePort `http://<узел>:30090`.
 
 Демонстрация автоскейлинга (модуль 10): запустить k6, наблюдать рост реплик
 с 1 до 4 по CPU (target 60%), затем спад.
