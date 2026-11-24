@@ -31,12 +31,11 @@ RUN curl -fsSL \
 
 # GitHub Actions runner (uid 1001: в ubuntu:24.04 uid 1000 занят пользователем ubuntu)
 RUN useradd -m -u 1001 runner \
+ && mkdir -p /home/runner/actions-runner \
  && curl -fsSL \
       "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" \
-    | tar -xz -C /home/runner \
- && mv /home/runner/actions-runner-linux-x64-${RUNNER_VERSION} /home/runner/actions-runner \
+    | tar -xz -C /home/runner/actions-runner \
  && /home/runner/actions-runner/bin/installdependencies.sh \
- && rm -rf /home/runner/actions-runner/bin/*.tar.gz \
  && chown -R runner:runner /home/runner
 
 COPY --chown=runner:runner start-runner.sh /home/runner/actions-runner/start-runner.sh
