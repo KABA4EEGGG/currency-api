@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: actions-runner
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-runner
+  namespace: actions-runner
+  labels:
+    app: github-runner
+spec:
+  # Один runner: job'ы должны выполняться последовательно.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: github-runner
+  template:
+    metadata:
+      labels:
+        app: github-runner
+    spec:
+      # Под должен подниматься на узле кластера (NodePort, helm, kubeconfig).
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: runner
+          image: ghcr.io/kaba4eeggg/actions-runner:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: REPO_URL
+              value: https://github.com/KABA4EEGGG/currency-api
+            - name: LABELS
+              value: self-hosted
+            - name: ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-runner-auth
+                  key: access-token
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            # kubeconfig для helm/kubectl (секрет создаётся один раз вне репо)
+            - name: kubeconfig
+              mountPath: /home/runner/.kube
+              readOnly: true
+            # Рабочий каталог runner
+            - name: work
+              mountPath: /home/runner/_work
+      volumes:
+        - name: kubeconfig
+          secret:
+            secretName: runner-kubeconfig
+            items:
+              - key: config
+                path: config
+                mode: 0400
+        - name: work
+          emptyDir: {}

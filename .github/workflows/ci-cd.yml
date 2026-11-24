@@ -3,8 +3,8 @@
 # Соответствие требованиям задания:
 #   Б1 — CI/CD-система: GitHub Actions (согласованная замена GitLab CI/Jenkins).
 #   Б2 — сборка и деплой на разных машинах: lint/test/build — GitHub-hosted
-#        runner (облачная ВМ GitHub), deploy/smoke/load — self-hosted runner
-#        рядом с кластером k3s.
+#        runner (облачная ВМ GitHub), deploy/smoke/load — self-hosted runner,
+#        работающий подом в кластере k3s (deploy/runner/).
 #   Б3 — стадии «линтер → автотесты → сборка → деплой»; падение любой
 #        проверки останавливает пайплайн (needs-граф).
 #   Б4 — секреты только через GitHub Actions Secrets (DB_PASSWORD); токен
@@ -14,7 +14,8 @@
 #        не собирает образ, а скачивает его из реестра; откат — helm rollback.
 #   В3 — нагрузочный тест k6 отдельной задачей после деплоя: thresholds
 #        валируют прогон, HTML-отчёт сохраняется артефактом, генератор
-#        нагрузки изолирован в контейнере, внешний API заменён заглушкой.
+#        нагрузки — отдельный изолированный под (k6 вшит в образ runner),
+#        внешний API заменён заглушкой mockfx.
 
 name: ci-cd
 
@@ -99,8 +100,6 @@ jobs:
     needs: build-push
     steps:
       - uses: actions/checkout@v4
-      - name: Установка PATH с локальными инструментами
-        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: helm lint
         run: helm lint deploy/k8s/currency
       - name: helm upgrade --install (тег образа = SHA коммита)
@@ -124,10 +123,6 @@ jobs:
       - name: Проверка /healthz и /readyz
         run: |
           set -e
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          # Сервис работает в кластере на узле debian, runner — на отдельной
-          # машине: адрес вычисляем из IP узла k3s (генератор нагрузки не на
-          # машине сервиса — В3).
           NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
           BASE_URL="http://${NODE_IP}:${NODE_PORT}"
           echo "BASE_URL=$BASE_URL"
@@ -151,21 +146,22 @@ jobs:
     needs: smoke
     steps:
       - uses: actions/checkout@v4
-      - name: Подготовка каталога отчёта (доступ из контейнера k6)
-        run: mkdir -p test/load/results && chmod 777 test/load/results
+      - name: Подготовка каталога отчёта
+        run: mkdir -p test/load/results
       - name: Адрес сервиса из IP узла кластера
         run: |
           NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
           echo "BASE_URL=http://${NODE_IP}:${NODE_PORT}" >> "$GITHUB_ENV"
-      - name: k6 run (изолированный контейнер — генератор нагрузки)
+      # k6 вшит в образ runner-под: генератор нагрузки — изолированный
+      # процесс с собственными лимитами ресурсов.
+      - name: k6 run (ступенчатый прогон с порогами)
         run: |
-          echo "Нагрузка с runner-машины на сервис кластера: $BASE_URL"
-          docker run --rm --network host \
-            -v "$PWD/test/load:/scripts" \
+          echo "Нагрузка на сервис: $BASE_URL"
+          k6 run \
             -e BASE_URL="$BASE_URL" \
-            -e REPORT_PATH=/scripts/results/report.html \
-            grafana/k6:2.4.0 run /scripts/currency-load-test.js \
-              --summary-export /scripts/results/summary.json
+            -e REPORT_PATH="$PWD/test/load/results/report.html" \
+            test/load/currency-load-test.js \
+            --summary-export test/load/results/summary.json
       - name: Сохранить HTML-отчёт как артефакт
         uses: actions/upload-artifact@v4
         with:

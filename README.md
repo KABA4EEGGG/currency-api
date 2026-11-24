@@ -74,10 +74,11 @@
    замены согласованы с преподавателем; все пункты задания (стадии, секреты,
    smoke, пороги ошибок/p95, HTML-отчёт артефактом, параметры теста,
    генератор нагрузки вне тестируемого окружения) эквивалентно покрыты.
-2. **Генератор нагрузки**: отдельной физической машины нет — k6 запускается в
-   изолированном контейнере `grafana/k6` (сеть host), тестируемый сервис — в
-   кластере. Сборка при этом выполняется в облаке GitHub. При появлении VPS
-   k6-задача переносится на него без изменения тестов (только `BASE_URL`).
+2. **Генератор нагрузки**: runner-под с k6 работает в том же кластере, что и
+   сервис (узел кластера один). Генератор — отдельный под с собственными
+   лимитами ресурсов (cgroups), нагрузка идёт через реальный NodePort,
+   внешний API заменён заглушкой. При появлении второй машины runner
+   переносится на неё без изменения пайплайна и тестов.
 
 ## Локальный запуск (docker compose)
 
@@ -121,33 +122,25 @@ k6 run -e BASE_URL=http://localhost:8080 test/load/currency-load-test.js
 
 1. **Секреты репозитория** (Settings → Secrets and variables → Actions):
    - `DB_PASSWORD` — пароль PostgreSQL для чарта (придумайте и сохраните).
-2. **Self-hosted runner** (Settings → Actions → Runners → New self-hosted runner).
-   Фактическая установка на машину `kurahost` (сборка идёт в облаке, а этот
-   runner делает деплой, smoke и генерирует нагрузку k6 — кластер при этом на
-   отдельном узле `debian`):
+2. **Self-hosted runner — pod в k3s** (`deploy/runner/`). Образ
+   (ubuntu + runner + kubectl + helm + k6) собирается пайплайном
+   `runner-image.yml` и публикуется в GHCR. Под регистрируется при старте
+   через API и дерегистрируется при остановке (`deploy/runner/start-runner.sh`).
    ```bash
-   mkdir ~/actions-runner && cd ~/actions-runner
-   # скачать и распаковать actions-runner-linux-x64-*.tar.gz по инструкции GitHub
-   TOKEN=$(gh api repos/<user>/<repo>/actions/runners/registration-token -X POST --jq .token)
-   ./config.sh --url https://github.com/<user>/<repo> --token "$TOKEN" \
-     --unattended --labels self-hosted --work _work
+   # секреты: токен GitHub (с правами repo) и kubeconfig кластера
+   kubectl create namespace actions-runner
+   kubectl -n actions-runner create secret generic github-runner-auth \
+     --from-literal=access-token="$(gh auth token)"
+   kubectl -n actions-runner create secret generic runner-kubeconfig \
+     --from-file=config=~/.kube/config
+   kubectl apply -f deploy/runner/k3s-runner.yaml
+   kubectl -n actions-runner logs deploy/github-runner -f   # проверка регистрации
    ```
-   На очень свежих дистрибутивах (libssl.so.4 вместо libssl.so.3) перед
-   запуском добавить симлинки рядом с рантаймом runner'а:
-   ```bash
-   ln -sf /usr/lib/x86_64-linux-gnu/libssl.so.4   ~/actions-runner/bin/libssl.so.3
-   ln -sf /usr/lib/x86_64-linux-gnu/libcrypto.so.4 ~/actions-runner/bin/libcrypto.so.3
-   ```
-   Запуск как пользовательский systemd-сервис (`~/.config/systemd/user/github-runner.service`,
-   `Environment=LD_LIBRARY_PATH=%h/actions-runner/bin`):
-   ```bash
-   systemctl --user daemon-reload && systemctl --user enable --now github-runner
-   ```
-   Требования к хосту runner'а: `helm` и `kubectl` с доступом к k3s
-   (`~/.local/bin` добавляется в PATH job'ом), `docker` (нужен для k6).
-3. **Публичность образа**: после первого успешного пуша открыть
-   `https://github.com/users/<user>/packages/container/currency-api/settings`
-   и переключить пакет в **Public**, чтобы k3s тянул образ без pull-secret.
+   Альтернатива для машины без кластера: установить раннер по официальной
+   инструкции GitHub и зарегистрировать с меткой `self-hosted`.
+3. **Публичность образа**: репозиторий публичный, пакеты, опубликованные
+   через `GITHUB_TOKEN`, наследуют видимость репозитория — k3s тянет образы
+   из GHCR без pull-secret.
 
 ### Откат на предыдущую версию (В2)
 
