@@ -28,7 +28,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: runner
-          image: ghcr.io/kaba4eeggg/actions-runner:latest
+          image: ghcr.io/kaba4eeggg/currency-api-actions-runner:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: REPO_URL
