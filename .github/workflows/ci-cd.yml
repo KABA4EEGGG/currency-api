@@ -1,0 +1,164 @@
+# CI/CD пайплайн Currency Exchange API (GitHub Actions).
+#
+# Соответствие требованиям задания:
+#   Б1 — CI/CD-система: GitHub Actions (согласованная замена GitLab CI/Jenkins).
+#   Б2 — сборка и деплой на разных машинах: lint/test/build — GitHub-hosted
+#        runner (облачная ВМ GitHub), deploy/smoke/load — self-hosted runner
+#        рядом с кластером k3s.
+#   Б3 — стадии «линтер → автотесты → сборка → деплой»; падение любой
+#        проверки останавливает пайплайн (needs-граф).
+#   Б4 — секреты только через GitHub Actions Secrets (DB_PASSWORD); токен
+#        реестра — встроенный GITHUB_TOKEN.
+#   Б5 — деплой с --atomic, smoke-проверка /healthz и /readyz после деплоя.
+#   В2 — образ публикуется в GHCR с тегом коммита (+ latest); деплой-машина
+#        не собирает образ, а скачивает его из реестра; откат — helm rollback.
+#   В3 — нагрузочный тест k6 отдельной задачей после деплоя: thresholds
+#        валируют прогон, HTML-отчёт сохраняется артефактом, генератор
+#        нагрузки изолирован в контейнере, внешний API заменён заглушкой.
+
+name: ci-cd
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_PORT: "30080"
+
+jobs:
+  lint:
+    name: Линтер (golangci-lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          args: --timeout 5m
+
+  test:
+    name: Автотесты (go test -race)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go test
+        run: go test ./... -race -timeout 5m
+
+  build-push:
+    name: Сборка и публикация образа
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Имя образа в нижнем регистре (требование GHCR)
+        id: image
+        run: |
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "name=$IMAGE" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: docker build & push (тег = SHA коммита + latest)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Деплой в k3s (self-hosted)
+    runs-on: [self-hosted]
+    needs: build-push
+    steps:
+      - uses: actions/checkout@v4
+      - name: Установка PATH с локальными инструментами
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: helm lint
+        run: helm lint deploy/k8s/currency
+      - name: helm upgrade --install (тег образа = SHA коммита)
+        run: |
+          helm upgrade --install currency-api deploy/k8s/currency \
+            --namespace currency --create-namespace \
+            --set image.repository='${{ needs.build-push.outputs.image }}' \
+            --set image.tag='${{ github.sha }}' \
+            --set database.password='${{ secrets.DB_PASSWORD }}' \
+            --set externalApi.url='http://currency-mock:8090' \
+            --set mock.enabled=true \
+            --atomic --timeout 3m
+      - name: Записать ревизию релиза в лог
+        run: helm history currency-api --namespace currency
+
+  smoke:
+    name: Smoke-проверка после деплоя
+    runs-on: [self-hosted]
+    needs: deploy
+    steps:
+      - name: Проверка /healthz и /readyz
+        run: |
+          set -e
+          BASE_URL="http://localhost:${NODE_PORT}"
+          for i in $(seq 1 30); do
+            if curl -sf "$BASE_URL/healthz" >/dev/null; then break; fi
+            echo "ожидание сервиса ($i/30)..."; sleep 2
+          done
+          echo "healthz: $(curl -sf $BASE_URL/healthz)"
+          curl -sf "$BASE_URL/healthz" | grep -q '"ok"'
+          curl -sf "$BASE_URL/readyz" | grep -q '"ready"'
+          echo "Смоук: конвертация и чтение истории..."
+          curl -sf -X POST "$BASE_URL/api/v1/convert" \
+            -H 'Content-Type: application/json' \
+            -d '{"from":"USD","to":"EUR","amount":10}' | grep -q '"id"'
+          curl -sf "$BASE_URL/api/v1/conversions?limit=5" >/dev/null
+          echo "Smoke OK"
+
+  load-test:
+    name: Нагрузочный тест (k6)
+    runs-on: [self-hosted]
+    needs: smoke
+    steps:
+      - uses: actions/checkout@v4
+      - name: Подготовка каталога отчёта (доступ из контейнера k6)
+        run: mkdir -p test/load/results && chmod 777 test/load/results
+      - name: k6 run (изолированный контейнер — генератор нагрузки)
+        run: |
+          docker run --rm --network host \
+            -v "$PWD/test/load:/scripts" \
+            -e BASE_URL="http://localhost:${NODE_PORT}" \
+            -e REPORT_PATH=/scripts/results/report.html \
+            grafana/k6:2.4.0 run /scripts/currency-load-test.js \
+              --summary-export /scripts/results/summary.json
+      - name: Сохранить HTML-отчёт как артефакт
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-report
+          path: |
+            test/load/results/report.html
+            test/load/results/summary.json

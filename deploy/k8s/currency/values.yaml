@@ -1,0 +1,59 @@
+# Значения Helm-чарта currency-api.
+# image.tag переопределяется CI тегом коммита (требование В2).
+
+image:
+  repository: ghcr.io/kseno/currency-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: NodePort
+  port: 8080
+  nodePort: 30080
+
+database:
+  # PostgreSQL разворачивается вместе с приложением.
+  enabled: true
+  image: postgres:17-alpine
+  user: currency
+  name: currency
+  # Секрет: в CI передаётся из GitHub Secrets (--set database.password=...).
+  password: ""
+  storage: 1Gi
+  storageClass: ""
+
+externalApi:
+  # Формат open.er-api.com. Для нагрузочных тестов CI включает заглушку:
+  # --set externalApi.url=http://mock:8090 --set mock.enabled=true (В3).
+  url: https://open.er-api.com/v6/latest
+  timeoutSeconds: 5
+
+ratesTtlSeconds: 3600
+logLevel: info
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 60
+
+mock:
+  enabled: false
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    # kube-prometheus-stack по умолчанию выбирает ServiceMonitor с лейблом
+    # release=<имя релиза monitoring-стека>.
+    additionalLabels:
+      release: monitoring

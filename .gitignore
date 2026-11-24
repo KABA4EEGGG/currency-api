@@ -1,0 +1,26 @@
+# Секреты и локальные файлы
+.env
+*.local
+
+# Артефакты сборки
+/bin/
+/dist/
+*.exe
+
+# Отчёты нагрузочных тестов (в CI сохраняются как артефакты)
+test/load/results/
+
+# Go
+*.test
+*.out
+coverage.*
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Служебные файлы ZCode
+.zcode/

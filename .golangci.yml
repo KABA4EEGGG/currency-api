@@ -1,0 +1,20 @@
+# Конфигурация golangci-lint v2 (стадия lint в CI).
+version: "2"
+
+linters:
+  # standard: errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - misspell
+  settings:
+    staticcheck:
+      checks: ["all", "-ST1000", "-ST1003", "-ST1020"]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/kseno/currency-api

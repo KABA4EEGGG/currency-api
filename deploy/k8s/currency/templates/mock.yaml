@@ -1,0 +1,71 @@
+{{- if .Values.mock.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "currency.fullname" . }}-mock
+  labels:
+    {{- include "currency.fullnameLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mock
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "currency.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mock
+  template:
+    metadata:
+      labels:
+        {{- include "currency.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mock
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mockfx
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/mockfx"]
+          ports:
+            - name: http
+              containerPort: 8090
+          env:
+            - name: FX_LISTEN_ADDR
+              value: ":8090"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "currency.fullname" . }}-mock
+  labels:
+    {{- include "currency.fullnameLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mock
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "currency.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mock
+  ports:
+    - name: http
+      port: 8090
+      targetPort: http
+{{- end }}

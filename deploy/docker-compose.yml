@@ -1,0 +1,78 @@
+# Локальный запуск всего стека (требование А3).
+# healthcheck + depends_on: service_healthy (требование Б5).
+# Параметризация через .env (скопируйте .env.example → .env).
+
+services:
+  server:
+    image: ghcr.io/kseno/currency-api:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile
+    environment:
+      FX_LISTEN_ADDR: ":8080"
+      FX_DATABASE_URL: postgres://currency:${POSTGRES_PASSWORD:-currency}@postgres:5432/currency?sslmode=disable
+      # По умолчанию — реальный внешний API; для нагрузочного теста
+      # выставить FX_EXCHANGE_API_URL=http://mock:8090 (В3).
+      FX_EXCHANGE_API_URL: ${FX_EXCHANGE_API_URL:-https://open.er-api.com/v6/latest}
+      FX_RATES_TTL: ${FX_RATES_TTL_SECONDS:-3600}
+      FX_LOG_LEVEL: ${FX_LOG_LEVEL:-info}
+      TARGET_URL: http://localhost:8080/healthz
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "/healthprobe"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: currency
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-currency}
+      POSTGRES_DB: currency
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U currency -d currency"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Заглушка внешнего API: под нагрузку сторонний сервис ставить нельзя (В3).
+  mock:
+    image: ghcr.io/kseno/currency-api:${IMAGE_TAG:-latest}
+    entrypoint: ["/mockfx"]
+    environment:
+      FX_LISTEN_ADDR: ":8090"
+      TARGET_URL: http://localhost:8090/healthz
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD", "/healthprobe"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # OpenAPI-документация через Swagger UI (требование А4).
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.28.0
+    environment:
+      SWAGGER_JSON: /spec/openapi.yaml
+    ports:
+      - "8081:8080"
+    volumes:
+      - ../api/openapi.yaml:/spec/openapi.yaml:ro
+    restart: unless-stopped
+
+volumes:
+  pgdata:
