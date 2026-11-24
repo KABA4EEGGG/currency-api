@@ -188,7 +188,7 @@ function textSummary(summary) {
   return [
     '────────── k6 summary ──────────',
     `requests: ${total.count || 0}  rate: ${(total.rate || 0).toFixed(2)}/s`,
-    `p95: ${((dur['p(95)'] || 0) * 1000).toFixed(1)}ms  errors: ${((failed.rate || 0) * 100).toFixed(2)}%`,
+    `p95: ${(dur['p(95)'] || 0).toFixed(1)}ms  errors: ${((failed.rate || 0) * 100).toFixed(2)}%`,
     '────────────────────────────────',
   ].join('\n');
 }
