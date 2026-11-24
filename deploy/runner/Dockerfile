@@ -29,8 +29,8 @@ RUN curl -fsSL \
  && mv /tmp/k6 /usr/local/bin/k6 \
  && k6 version
 
-# GitHub Actions runner
-RUN useradd -m -u 1000 runner \
+# GitHub Actions runner (uid 1001: в ubuntu:24.04 uid 1000 занят пользователем ubuntu)
+RUN useradd -m -u 1001 runner \
  && curl -fsSL \
       "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" \
     | tar -xz -C /home/runner \
