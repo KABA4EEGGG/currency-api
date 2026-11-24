@@ -59,9 +59,9 @@ spec:
         - name: kubeconfig
           secret:
             secretName: runner-kubeconfig
+            defaultMode: 0444
             items:
               - key: config
                 path: config
-                mode: 0400
         - name: work
           emptyDir: {}
