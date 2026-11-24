@@ -9,6 +9,12 @@ function esc(s) {
     .replace(/>/g, '&gt;');
 }
 
+// handleSummary кладёт значения в metric.values, --summary-export — прямо
+// в объекте; функция возвращает нужную форму.
+export function vals(metric) {
+  return (metric && metric.values) || metric || {};
+}
+
 function fmt(v, digits) {
   if (v === undefined || v === null || Number.isNaN(v)) return '—';
   return Number(v).toFixed(digits === undefined ? 2 : digits);
@@ -44,18 +50,18 @@ function scenarioRows(summary) {
   }
 
   return [...scenarios].sort().map((name) => {
-    const dur = durationByScenario[name] || {};
-    const failed = failedByScenario[name];
-    const reqs = reqsByScenario[name];
+    const dur = vals(durationByScenario[name]);
+    const failed = vals(failedByScenario[name]);
+    const reqs = vals(reqsByScenario[name]);
     return `
       <tr>
         <td>${esc(name)}</td>
-        <td>${esc(reqs ? fmt(reqs.count, 0) : '—')}</td>
-        <td>${esc(reqs ? fmt(reqs.rate) : '—')}</td>
+        <td>${esc(reqs.count === undefined ? '—' : fmt(reqs.count, 0))}</td>
+        <td>${esc(reqs.rate === undefined ? '—' : fmt(reqs.rate))}</td>
         <td>${ms(dur['p(90)'])}</td>
         <td>${ms(dur['p(95)'])}</td>
         <td>${ms(dur['p(99)'])}</td>
-        <td>${esc(failed ? fmt(failed.rate * 100) : '—')} %</td>
+        <td>${esc(failed.rate === undefined ? '—' : fmt(failed.rate * 100))} %</td>
       </tr>`;
   });
 }
@@ -77,9 +83,9 @@ function thresholdRows(summary) {
 }
 
 export function htmlReport(summary) {
-  const total = summary.metrics.http_reqs || {};
-  const dur = summary.metrics.http_req_duration || {};
-  const failed = summary.metrics.http_req_failed || {};
+  const total = vals(summary.metrics.http_reqs);
+  const dur = vals(summary.metrics.http_req_duration);
+  const failed = vals(summary.metrics.http_req_failed);
   const allOk = Object.values(summary.metrics).every(
     (m) => !m.thresholds || Object.values(m.thresholds).every((t) => t.ok),
   );

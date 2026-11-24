@@ -19,7 +19,7 @@
 
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { htmlReport } from './lib/report.js';
+import { htmlReport, vals } from './lib/report.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:30080';
 
@@ -182,13 +182,13 @@ export function handleSummary(summary) {
 }
 
 function textSummary(summary) {
-  const total = summary.metrics.http_reqs || {};
-  const dur = summary.metrics.http_req_duration || {};
-  const failed = summary.metrics.http_req_failed || {};
+  const total = vals(summary.metrics.http_reqs);
+  const dur = vals(summary.metrics.http_req_duration);
+  const failed = vals(summary.metrics.http_req_failed);
   return [
     '────────── k6 summary ──────────',
     `requests: ${total.count || 0}  rate: ${(total.rate || 0).toFixed(2)}/s`,
-    `p95: ${(dur['p(95)'] || 0).toFixed(1)}ms  errors: ${((failed.rate || 0) * 100).toFixed(2)}%`,
+    `p95: ${((dur['p(95)'] || 0) * 1000).toFixed(1)}ms  errors: ${((failed.rate || 0) * 100).toFixed(2)}%`,
     '────────────────────────────────',
   ].join('\n');
 }

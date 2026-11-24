@@ -26,7 +26,10 @@ var baseRates = map[string]float64{
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	base := strings.ToUpper(strings.TrimPrefix(r.URL.Path, "/v6/latest/"))
+	// Код валюты — последний сегмент пути: подходит и /v6/latest/USD,
+	// и /USD (клиент строит URL от базового пути конфигурации).
+	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	base := strings.ToUpper(segments[len(segments)-1])
 
 	rus, ok := ratesFor(base)
 	if !ok {
@@ -69,7 +72,7 @@ func main() {
 		addr = ":8090"
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v6/latest/", handler)
+	mux.HandleFunc("/", handler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))

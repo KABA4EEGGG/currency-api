@@ -25,9 +25,10 @@ database:
   storageClass: ""
 
 externalApi:
-  # Формат open.er-api.com. Для нагрузочных тестов CI включает заглушку:
-  # --set externalApi.url=http://mock:8090 --set mock.enabled=true (В3).
-  url: https://open.er-api.com/v6/latest
+  # Формат open.er-api.com. По умолчанию — заглушка mockfx: работает в
+  # изолированных сетях и обязательна под нагрузку (В3). Реальный провайдер:
+  #   --set externalApi.url=https://open.er-api.com/v6/latest --set mock.enabled=false
+  url: http://currency-mock:8090
   timeoutSeconds: 5
 
 ratesTtlSeconds: 3600
@@ -47,7 +48,7 @@ autoscaling:
   targetCPUUtilizationPercentage: 60
 
 mock:
-  enabled: false
+  enabled: true
 
 monitoring:
   serviceMonitor:

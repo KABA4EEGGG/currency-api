@@ -11,9 +11,10 @@ services:
     environment:
       FX_LISTEN_ADDR: ":8080"
       FX_DATABASE_URL: postgres://currency:${POSTGRES_PASSWORD:-currency}@postgres:5432/currency?sslmode=disable
-      # По умолчанию — реальный внешний API; для нагрузочного теста
-      # выставить FX_EXCHANGE_API_URL=http://mock:8090 (В3).
-      FX_EXCHANGE_API_URL: ${FX_EXCHANGE_API_URL:-https://open.er-api.com/v6/latest}
+      # По умолчанию — заглушка mockfx: локальная сеть может блокировать
+      # внешний API, а под нагрузку сторонний сервис ставить нельзя (В3).
+      # Реальный провайдер: FX_EXCHANGE_API_URL=https://open.er-api.com/v6/latest
+      FX_EXCHANGE_API_URL: ${FX_EXCHANGE_API_URL:-http://mock:8090}
       FX_RATES_TTL: ${FX_RATES_TTL_SECONDS:-3600}
       FX_LOG_LEVEL: ${FX_LOG_LEVEL:-info}
       TARGET_URL: http://localhost:8080/healthz
@@ -27,6 +28,8 @@ services:
       start_period: 10s
     depends_on:
       postgres:
+        condition: service_healthy
+      mock:
         condition: service_healthy
     restart: unless-stopped
 

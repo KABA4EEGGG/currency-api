@@ -81,8 +81,15 @@
 
 ## Локальный запуск (docker compose)
 
+По умолчанию compose использует заглушку `mock` вместо внешнего API
+(изолированные сети часто блокируют open.er-api.com, а под нагрузку
+сторонний сервис ставить нельзя — В3). Реальный провайдер включается
+одной переменной:
+
 ```bash
 cp .env.example .env            # при необходимости изменить
+# реальный внешний API: раскомментировать в .env
+# FX_EXCHANGE_API_URL=https://open.er-api.com/v6/latest
 docker compose -f deploy/docker-compose.yml up --build -d
 # API:      http://localhost:8080
 # Swagger:  http://localhost:8081
@@ -99,11 +106,10 @@ curl -s -X POST http://localhost:8080/api/v1/convert \
 curl -s http://localhost:8080/api/v1/stats
 ```
 
-Нагрузочный тест локально (на заглушке — внешний API не задействуется):
+Нагрузочный тест локально (заглушка включена по умолчанию — внешний API
+не задействуется):
 
 ```bash
-docker compose -f deploy/docker-compose.yml down server
-FX_EXCHANGE_API_URL=http://mock:8090 docker compose -f deploy/docker-compose.yml up -d server
 k6 run -e BASE_URL=http://localhost:8080 test/load/currency-load-test.js
 ```
 
@@ -159,9 +165,10 @@ p95 чтения < 250 мс, p95 кэша курсов < 100 мс. Наруше�
 helm upgrade --install currency-api deploy/k8s/currency \
   --namespace currency --create-namespace \
   --set image.tag=<TAG> \
-  --set database.password=<ПАРОЛЬ> \
-  --set externalApi.url='http://currency-mock:8090' \
-  --set mock.enabled=true
+  --set database.password=<ПАРОЛЬ>
+# По умолчанию чарт ставит заглушку externalApi.url=http://currency-mock:8090
+# и mock.enabled=true. Реальный провайдер (из сети с доступом в интернет):
+#   --set externalApi.url=https://open.er-api.com/v6/latest --set mock.enabled=false
 
 kubectl -n currency get hpa -w        # наблюдение автоскейлинга
 ```
