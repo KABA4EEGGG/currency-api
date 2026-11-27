@@ -46,6 +46,9 @@ autoscaling:
   minReplicas: 1
   maxReplicas: 4
   targetCPUUtilizationPercentage: 60
+  # Окно стабилизации scale-down, сек: как долго CPU должен держаться ниже
+  # порога, прежде чем HPA удалит лишнюю реплику (дефолт K8s — 300).
+  scaleDownStabilizationSeconds: 60
 
 mock:
   enabled: true

@@ -19,4 +19,25 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      # Окно стабилизации: сколько секунд CPU должен держаться ниже порога,
+      # прежде чем HPA уберёт лишнюю реплику (дефолт K8s — 300).
+      stabilizationWindowSeconds: {{ .Values.autoscaling.scaleDownStabilizationSeconds }}
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleUp:
+      # Масштабирование вверх — без задержки, до ×2 или +4 пода за 15 сек.
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
 {{- end }}
